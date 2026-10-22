@@ -8,6 +8,7 @@ async function writeAuditLog({
   targetUserId = null,
   outcome,
   details = {},
+  db = pool,
 }) {
   const allowedOutcomes = ["success", "denied", "failure"];
 
@@ -15,7 +16,7 @@ async function writeAuditLog({
     throw new Error("Invalid audit log action or outcome.");
   }
 
-  await pool.query(
+  await db.query(
     `INSERT INTO audit_logs
       (actor_user_id, action, document_id, target_user_id, outcome, details)
      VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,

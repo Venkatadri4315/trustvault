@@ -11,8 +11,8 @@ const { writeAuditLog } = require("./audit");
 const { upload } = require("./upload.middleware");
 
 const router = express.Router();
+const UPLOAD_DIR = path.resolve(__dirname, "..", "uploads");
 
-// All document routes require authentication.
 router.use(requireAuth);
 
 // POST /api/documents
@@ -31,8 +31,8 @@ router.post("/", (req, res) => {
             reason: tooLarge ? "File size limit exceeded" : "Upload rejected",
           },
         });
-      } catch (auditError) {
-        console.error("Upload audit logging failed:", auditError.message);
+      } catch (error) {
+        console.error("Upload audit logging failed:", error.message);
       }
 
       return res.status(tooLarge ? 413 : 400).json({
@@ -76,7 +76,6 @@ router.post("/", (req, res) => {
 
       const fileBuffer = await fs.readFile(req.file.path);
       const mimeType = req.file.mimetype;
-
       let validFile = false;
 
       if (mimeType === "application/pdf") {
@@ -157,8 +156,8 @@ router.post("/", (req, res) => {
           outcome: "success",
           details: { sizeBytes: req.file.size, mimeType, sha256 },
         });
-      } catch (auditError) {
-        console.error("Upload audit logging failed:", auditError.message);
+      } catch (error) {
+        console.error("Upload audit logging failed:", error.message);
       }
 
       return res.status(201).json({
@@ -186,9 +185,9 @@ router.post("/", (req, res) => {
       if (!fileSaved) {
         try {
           await fs.unlink(req.file.path);
-        } catch (cleanupError) {
-          if (cleanupError.code !== "ENOENT") {
-            console.error("Upload cleanup failed:", cleanupError.message);
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            console.error("Upload cleanup failed:", error.message);
           }
         }
       }
@@ -231,6 +230,142 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("Document listing failed:", error.message);
     return res.status(500).json({ error: "Could not list documents." });
+  }
+});
+
+// GET /api/documents/:id/download
+// Download only if the authenticated user has read permission.
+router.get("/:id/download", async (req, res) => {
+  const documentId = req.params.id;
+
+  if (!/^[1-9]\d*$/.test(documentId)) {
+    return res.status(400).json({ error: "Invalid document ID." });
+  }
+
+  try {
+    const access = await checkDocumentAccess(
+      req.user.id,
+      documentId,
+      "read"
+    );
+
+    if (!access.exists || !access.allowed) {
+      await writeAuditLog({
+        actorUserId: req.user.id,
+        action: "DOCUMENT_DOWNLOAD",
+        documentId: access.exists ? documentId : null,
+        outcome: "denied",
+        details: {
+          reason: access.exists ? "Access denied" : "Document not found",
+        },
+      });
+
+      return res.status(404).json({ error: "Document not found." });
+    }
+
+    const result = await pool.query(
+      `SELECT storage_key, original_filename, mime_type
+       FROM documents
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [documentId]
+    );
+
+    if (result.rows.length === 0) {
+      await writeAuditLog({
+        actorUserId: req.user.id,
+        action: "DOCUMENT_DOWNLOAD",
+        documentId,
+        outcome: "denied",
+        details: { reason: "Document no longer available" },
+      });
+
+      return res.status(404).json({ error: "Document not found." });
+    }
+
+    const document = result.rows[0];
+    const filePath = path.resolve(UPLOAD_DIR, document.storage_key);
+
+    // Only allow files directly inside the uploads directory.
+    if (path.dirname(filePath) !== UPLOAD_DIR) {
+      await writeAuditLog({
+        actorUserId: req.user.id,
+        action: "DOCUMENT_DOWNLOAD",
+        documentId,
+        outcome: "failure",
+        details: { reason: "Invalid storage path" },
+      });
+
+      return res.status(500).json({
+        error: "Could not download document.",
+      });
+    }
+
+    await fs.access(filePath);
+
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    return res.download(
+      filePath,
+      document.original_filename,
+      {
+        headers: {
+          "Content-Type": document.mime_type,
+        },
+      },
+      async (error) => {
+        try {
+          await writeAuditLog({
+            actorUserId: req.user.id,
+            action: "DOCUMENT_DOWNLOAD",
+            documentId,
+            outcome: error ? "failure" : "success",
+            details: error
+              ? { reason: "File transfer failed" }
+              : { reason: "File transfer completed" },
+          });
+        } catch (auditError) {
+          console.error("Download audit logging failed:", auditError.message);
+        }
+
+        if (error) {
+          console.error("Document download failed:", error.message);
+
+          if (!res.headersSent) {
+            res.status(500).json({
+              error: "Could not download document.",
+            });
+          }
+        }
+      }
+    );
+  } catch (error) {
+    console.error("Document download failed:", error.message);
+
+    try {
+      await writeAuditLog({
+        actorUserId: req.user.id,
+        action: "DOCUMENT_DOWNLOAD",
+        documentId,
+        outcome: error.code === "ENOENT" ? "failure" : "failure",
+        details: {
+          reason:
+            error.code === "ENOENT"
+              ? "Stored file is missing"
+              : "Download processing failed",
+        },
+      });
+    } catch (auditError) {
+      console.error("Download audit logging failed:", auditError.message);
+    }
+
+    if (!res.headersSent) {
+      return res.status(error.code === "ENOENT" ? 404 : 500).json({
+        error:
+          error.code === "ENOENT"
+            ? "Document file not found."
+            : "Could not download document.",
+      });
+    }
   }
 });
 

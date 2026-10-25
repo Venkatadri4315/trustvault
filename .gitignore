@@ -5,3 +5,15 @@ node_modules/
 dist/
 uploads/
 coverage/
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+uploads/
+coverage/
+trustvault-backup.dump
+server/check-login.js
+server/check-user.js
+server/reset-password.js
+server/src/auth.routes.backup.js

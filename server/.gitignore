@@ -1,0 +1,16 @@
+# Local diagnostic and test artifacts
+/check-recipient.js
+/delete-test.txt
+/downloaded-document-3.txt
+/downloaded-test.txt
+/large-test.txt
+/npm-audit-report.txt
+/ownership-test.txt
+/package.json.backup
+/reader-document-3.txt
+/reader-download-test.txt
+/reader-download.txt
+/restricted-role-test.txt
+/soft-delete-test.txt
+/upload-test.exe
+/upload-test.txt

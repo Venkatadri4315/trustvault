@@ -1,13 +1,10 @@
 
 const pool = require("./db");
 
-/**
- * Check whether a user can perform an action on a document.
- * Owners can read and edit their own documents.
- * Shared users need an active read or edit permission.
- */
+const VALID_ACTIONS = ["read", "edit", "download"];
+
 async function checkDocumentAccess(userId, documentId, action) {
-  if (!["read", "edit"].includes(action)) {
+  if (!VALID_ACTIONS.includes(action)) {
     throw new Error("Unsupported document action.");
   }
 
@@ -17,25 +14,27 @@ async function checkDocumentAccess(userId, documentId, action) {
        d.owner_id,
        CASE
          WHEN d.owner_id = $1 THEN TRUE
-         WHEN $3 = 'read' AND EXISTS (
-           SELECT 1
-           FROM document_permissions p
-           WHERE p.document_id = d.id
-             AND p.user_id = $1
-             AND p.revoked_at IS NULL
-             AND p.permission IN ('read', 'edit')
+         WHEN $3 = 'read' AND p.permission IN (
+           'read_only',
+           'read_download',
+           'edit_only',
+           'edit_download'
          ) THEN TRUE
-         WHEN $3 = 'edit' AND EXISTS (
-           SELECT 1
-           FROM document_permissions p
-           WHERE p.document_id = d.id
-             AND p.user_id = $1
-             AND p.revoked_at IS NULL
-             AND p.permission = 'edit'
+         WHEN $3 = 'edit' AND p.permission IN (
+           'edit_only',
+           'edit_download'
+         ) THEN TRUE
+         WHEN $3 = 'download' AND p.permission IN (
+           'read_download',
+           'edit_download'
          ) THEN TRUE
          ELSE FALSE
        END AS allowed
      FROM documents d
+     LEFT JOIN document_permissions p
+       ON p.document_id = d.id
+      AND p.user_id = $1
+      AND p.revoked_at IS NULL
      WHERE d.id = $2
        AND d.deleted_at IS NULL`,
     [userId, documentId, action]

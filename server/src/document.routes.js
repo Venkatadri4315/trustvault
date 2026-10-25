@@ -258,53 +258,53 @@ router.post("/", (req, res) => {
 
       const result = await pool.query(
 
-        `INSERT INTO documents
+        `INSERT INTO documents (
 
-          (
+          owner_id,
 
-            owner_id,
+          title,
 
-            title,
+          description,
 
-            description,
+          category,
 
-            category,
+          storage_key,
 
-            storage_key,
+          original_filename,
 
-            original_filename,
+          mime_type,
 
-            mime_type,
+          size_bytes,
 
-            size_bytes,
+          sha256
 
-            sha256
+        )
 
-          )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING
 
-         RETURNING
+          id,
 
-           id,
+          owner_id,
 
-           owner_id,
+          title,
 
-           title,
+          description,
 
-           description,
+          category,
 
-           category,
+          original_filename,
 
-           original_filename,
+          mime_type,
 
-           mime_type,
+          size_bytes,
 
-           size_bytes,
+          sha256,
 
-           sha256,
+          created_at,
 
-           created_at`,
+          updated_at`,
 
         [
 
@@ -380,7 +380,7 @@ router.post("/", (req, res) => {
 
     } catch (error) {
 
-      console.error("Document upload failed:", error.message);
+      console.error("Document upload failed:", error);
 
 
 
@@ -404,13 +404,7 @@ router.post("/", (req, res) => {
 
       } catch (auditError) {
 
-        console.error(
-
-          "Upload audit logging failed:",
-
-          auditError.message
-
-        );
+        console.error("Upload audit logging failed:", auditError.message);
 
       }
 
@@ -460,49 +454,49 @@ router.get("/", async (req, res) => {
 
       `SELECT DISTINCT
 
-         d.id,
+        d.id,
 
-         d.title,
+        d.title,
 
-         d.description,
+        d.description,
 
-         d.category,
+        d.category,
 
-         d.original_filename,
+        d.original_filename,
 
-         d.mime_type,
+        d.mime_type,
 
-         d.size_bytes,
+        d.size_bytes,
 
-         d.owner_id,
+        d.owner_id,
 
-         d.created_at,
+        d.created_at,
 
-         d.updated_at,
+        d.updated_at,
 
-         CASE
+        CASE
 
-           WHEN d.owner_id = $1 THEN 'owner'
+          WHEN d.owner_id = $1 THEN 'owner'
 
-           ELSE p.permission
+          ELSE p.permission
 
-         END AS access_level
+        END AS access_level
 
-       FROM documents AS d
+      FROM documents AS d
 
-       LEFT JOIN document_permissions AS p
+      LEFT JOIN document_permissions AS p
 
-         ON p.document_id = d.id
+        ON p.document_id = d.id
 
-        AND p.user_id = $1
+       AND p.user_id = $1
 
-        AND p.revoked_at IS NULL
+       AND p.revoked_at IS NULL
 
-       WHERE d.deleted_at IS NULL
+      WHERE d.deleted_at IS NULL
 
-         AND (d.owner_id = $1 OR p.id IS NOT NULL)
+        AND (d.owner_id = $1 OR p.id IS NOT NULL)
 
-       ORDER BY d.created_at DESC`,
+      ORDER BY d.created_at DESC`,
 
       [req.user.id]
 
@@ -536,7 +530,7 @@ router.get("/", async (req, res) => {
 
   } catch (error) {
 
-    console.error("Document listing failed:", error.message);
+    console.error("Document listing failed:", error);
 
 
 
@@ -550,58 +544,73 @@ router.get("/", async (req, res) => {
 
 });
 
-// --------------------------------------------------
-
-// POST /api/documents/:id/share — Share a document
-
-// --------------------------------------------------
+// POST /api/documents/:id/share — Share by email
 
 router.post("/:id/share", async (req, res) => {
+
   const documentId = req.params.id;
 
-  const targetUserId = req.body?.userId;
+  const targetEmail = String(req.body?.email || "")
+
+    .trim()
+
+    .toLowerCase();
 
   const permission = req.body?.permission;
 
 
 
-  if (!/^[1-9]\d*$/.test(documentId)) {
+  const validPermissions = [
 
-    return res.status(400).json({
+    "read_only",
 
-      error: "Invalid document ID.",
+    "read_download",
 
-    });
+    "edit_only",
 
-  }
+    "edit_download",
+
+  ];
 
 
 
-  if (
+if (!/^[1-9]\d*$/.test(documentId)) {
 
-    !Number.isSafeInteger(targetUserId) ||
+  return res.status(400).json({
 
-    targetUserId < 1 ||
+    error: "Invalid document ID.",
 
-    !["read", "edit"].includes(permission)
+  });
 
-  ) {
+}
 
-    return res.status(400).json({
 
-      error:
 
-        "A valid numeric userId and permission (read or edit) are required.",
+if (
 
-    });
+  !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail) ||
 
-  }
+  !validPermissions.includes(permission)
+
+) {
+
+  return res.status(400).json({
+
+    error: "A valid recipient email and permission are required.",
+
+  });
+
+}
+
+
 
 
 
   let client;
 
   let transactionStarted = false;
+
+  let targetUserId = null;
 
 
 
@@ -623,7 +632,9 @@ router.post("/:id/share", async (req, res) => {
 
        FROM documents
 
-       WHERE id = $1 AND deleted_at IS NULL
+       WHERE id = $1
+
+         AND deleted_at IS NULL
 
        FOR UPDATE`,
 
@@ -689,8 +700,6 @@ router.post("/:id/share", async (req, res) => {
 
         documentId,
 
-        targetUserId,
-
         outcome: "denied",
 
         details: {
@@ -713,33 +722,17 @@ router.post("/:id/share", async (req, res) => {
 
 
 
-    if (String(targetUserId) === String(document.owner_id)) {
-
-      await client.query("ROLLBACK");
-
-      transactionStarted = false;
-
-
-
-      return res.status(400).json({
-
-        error: "You cannot share a document with its owner.",
-
-      });
-
-    }
-
-
-
     const userResult = await client.query(
 
-      `SELECT id
+      `SELECT id, email
 
        FROM users
 
-       WHERE id = $1 AND is_active = TRUE`,
+       WHERE LOWER(email) = $1
 
-      [targetUserId]
+         AND is_active = TRUE`,
+
+      [targetEmail]
 
     );
 
@@ -755,7 +748,29 @@ router.post("/:id/share", async (req, res) => {
 
       return res.status(404).json({
 
-        error: "Active target user not found.",
+        error: "Active recipient email not found.",
+
+      });
+
+    }
+
+
+
+    targetUserId = userResult.rows[0].id;
+
+
+
+    if (String(targetUserId) === String(document.owner_id)) {
+
+      await client.query("ROLLBACK");
+
+      transactionStarted = false;
+
+
+
+      return res.status(400).json({
+
+        error: "You cannot share a document with its owner.",
 
       });
 
@@ -801,7 +816,17 @@ router.post("/:id/share", async (req, res) => {
 
          WHERE id = $3
 
-         RETURNING id, document_id, user_id, permission, granted_at`,
+         RETURNING
+
+           id,
+
+           document_id,
+
+           user_id,
+
+           permission,
+
+           granted_at`,
 
         [
 
@@ -821,21 +846,39 @@ router.post("/:id/share", async (req, res) => {
 
         `INSERT INTO document_permissions
 
-           (document_id, user_id, permission, granted_by)
+          (document_id, user_id, permission, granted_by)
 
          VALUES ($1, $2, $3, $4)
 
-         RETURNING id, document_id, user_id, permission, granted_at`,
+         RETURNING
 
-        [documentId, targetUserId, permission, req.user.id]
+           id,
+
+           document_id,
+
+           user_id,
+
+           permission,
+
+           granted_at`,
+
+        [
+
+          documentId,
+
+          targetUserId,
+
+          permission,
+
+          req.user.id,
+
+        ]
 
       );
 
     }
 
 
-
-    // Write the audit entry in the same transaction.
 
     await writeAuditLog({
 
@@ -852,6 +895,8 @@ router.post("/:id/share", async (req, res) => {
       details: {
 
         permission,
+
+        recipientEmail: targetEmail,
 
       },
 
@@ -877,6 +922,10 @@ router.post("/:id/share", async (req, res) => {
 
   } catch (error) {
 
+    console.error("Document sharing failed:", error);
+
+
+
     if (client && transactionStarted) {
 
       try {
@@ -898,10 +947,6 @@ router.post("/:id/share", async (req, res) => {
       }
 
     }
-
-
-
-    console.error("Document sharing failed:", error.message);
 
 
 
@@ -959,21 +1004,11 @@ router.post("/:id/share", async (req, res) => {
 
 });
 
-// --------------------------------------------------
-
 // DELETE /api/documents/:id/share/:userId — Revoke access
-
-// --------------------------------------------------
 
 router.delete("/:id/share/:userId", async (req, res) => {
 
-  const {
-
-    id: documentId,
-
-    userId: targetUserId,
-
-  } = req.params;
+  const { id: documentId, userId: targetUserId } = req.params;
 
 
 
@@ -1019,7 +1054,9 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
        FROM documents
 
-       WHERE id = $1 AND deleted_at IS NULL
+       WHERE id = $1
+
+         AND deleted_at IS NULL
 
        FOR UPDATE`,
 
@@ -1065,11 +1102,13 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
 
 
-    const document = documentResult.rows[0];
+    if (
 
+      String(documentResult.rows[0].owner_id) !==
 
+      String(req.user.id)
 
-    if (String(document.owner_id) !== String(req.user.id)) {
+    ) {
 
       await client.query("ROLLBACK");
 
@@ -1101,7 +1140,7 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
       return res.status(403).json({
 
-        error: "Only the document owner can manage sharing.",
+        error: "Only the document owner can revoke access.",
 
       });
 
@@ -1137,31 +1176,9 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
 
 
-      await writeAuditLog({
-
-        actorUserId: req.user.id,
-
-        action: "DOCUMENT_SHARE_REVOKE",
-
-        documentId,
-
-        targetUserId,
-
-        outcome: "denied",
-
-        details: {
-
-          reason: "No active permission found",
-
-        },
-
-      });
-
-
-
       return res.status(404).json({
 
-        error: "No active permission found for this user.",
+        error: "Active permission not found.",
 
       });
 
@@ -1213,7 +1230,7 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
         console.error(
 
-          "Revocation rollback failed:",
+          "Revoke rollback failed:",
 
           rollbackError.message
 
@@ -1225,43 +1242,7 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
 
 
-    console.error("Permission revocation failed:", error.message);
-
-
-
-    try {
-
-      await writeAuditLog({
-
-        actorUserId: req.user.id,
-
-        action: "DOCUMENT_SHARE_REVOKE",
-
-        documentId,
-
-        targetUserId,
-
-        outcome: "failure",
-
-        details: {
-
-          reason: "Revocation operation failed",
-
-        },
-
-      });
-
-    } catch (auditError) {
-
-      console.error(
-
-        "Revocation audit logging failed:",
-
-        auditError.message
-
-      );
-
-    }
+    console.error("Access revocation failed:", error);
 
 
 
@@ -1283,124 +1264,253 @@ router.delete("/:id/share/:userId", async (req, res) => {
 
 });
 
-// --------------------------------------------------
 
-// --------------------------------------------------
-// DELETE /api/documents/:id — Soft-delete a document
-// Only the document owner may delete it.
-// --------------------------------------------------
+
+// DELETE /api/documents/:id — Delete a document
+
 router.delete("/:id", async (req, res) => {
+
   const documentId = req.params.id;
-  const actorUserId = req.user.id;
+
+
 
   if (!/^[1-9]\d*$/.test(documentId)) {
+
     return res.status(400).json({
+
       error: "Invalid document ID.",
+
     });
+
   }
+
+
 
   let client;
+
   let transactionStarted = false;
 
+
+
   try {
+
     client = await pool.connect();
+
+
+
     await client.query("BEGIN");
+
     transactionStarted = true;
 
-    const result = await client.query(
-      `SELECT id, owner_id
+
+
+    const documentResult = await client.query(
+
+      `SELECT id, owner_id, storage_key
+
        FROM documents
+
        WHERE id = $1
+
          AND deleted_at IS NULL
+
        FOR UPDATE`,
+
       [documentId]
+
     );
 
-    const document = result.rows[0];
 
-    if (!document) {
-      await writeAuditLog({
-        actorUserId,
-        action: "DOCUMENT_DELETE",
-        documentId,
-        outcome: "denied",
-        details: { reason: "Document not found" },
-        db: client,
-      });
 
-      await client.query("COMMIT");
+    if (documentResult.rows.length === 0) {
+
+      await client.query("ROLLBACK");
+
       transactionStarted = false;
 
-      return res.status(404).json({
-        error: "Document not found.",
+
+
+      await writeAuditLog({
+
+        actorUserId: req.user.id,
+
+        action: "DOCUMENT_DELETE",
+
+        documentId,
+
+        outcome: "denied",
+
+        details: {
+
+          reason: "Document not found",
+
+        },
+
       });
+
+
+
+      return res.status(404).json({
+
+        error: "Document not found.",
+
+      });
+
     }
 
-    if (String(document.owner_id) !== String(actorUserId)) {
-      await writeAuditLog({
-        actorUserId,
-        action: "DOCUMENT_DELETE",
-        documentId,
-        outcome: "denied",
-        details: { reason: "Only the document owner can delete it" },
-        db: client,
-      });
 
-      await client.query("COMMIT");
+
+    const document = documentResult.rows[0];
+
+
+
+    if (String(document.owner_id) !== String(req.user.id)) {
+
+      await client.query("ROLLBACK");
+
       transactionStarted = false;
 
-      // Return 404 to avoid disclosing whether another user's document exists.
-      return res.status(404).json({
-        error: "Document not found.",
+
+
+      await writeAuditLog({
+
+        actorUserId: req.user.id,
+
+        action: "DOCUMENT_DELETE",
+
+        documentId,
+
+        outcome: "denied",
+
+        details: {
+
+          reason: "Only the owner can delete a document",
+
+        },
+
       });
+
+
+
+      return res.status(403).json({
+
+        error: "Only the document owner can delete this document.",
+
+      });
+
     }
+
+
 
     await client.query(
+
       `UPDATE documents
+
        SET deleted_at = NOW(),
+
            updated_at = NOW()
-       WHERE id = $1
-         AND owner_id = $2
-         AND deleted_at IS NULL`,
-      [documentId, actorUserId]
+
+       WHERE id = $1`,
+
+      [documentId]
+
     );
 
+
+
+    await client.query(
+
+      `UPDATE document_permissions
+
+       SET revoked_at = NOW()
+
+       WHERE document_id = $1
+
+         AND revoked_at IS NULL`,
+
+      [documentId]
+
+    );
+
+
+
     await writeAuditLog({
-      actorUserId,
+
+      actorUserId: req.user.id,
+
       action: "DOCUMENT_DELETE",
+
       documentId,
+
       outcome: "success",
-      details: { deletion_type: "soft_delete" },
+
       db: client,
+
     });
+
+
 
     await client.query("COMMIT");
+
     transactionStarted = false;
 
+
+
     return res.status(200).json({
+
       message: "Document deleted successfully.",
-      documentId,
+
     });
+
   } catch (error) {
+
     if (client && transactionStarted) {
-      await client.query("ROLLBACK").catch(() => {});
+
+      try {
+
+        await client.query("ROLLBACK");
+
+        transactionStarted = false;
+
+      } catch (rollbackError) {
+
+        console.error(
+
+          "Delete rollback failed:",
+
+          rollbackError.message
+
+        );
+
+      }
+
     }
 
-    console.error("Document deletion failed:", error.message);
+
+
+    console.error("Document deletion failed:", error);
+
+
 
     return res.status(500).json({
+
       error: "Unable to delete document.",
+
     });
+
   } finally {
+
     if (client) {
+
       client.release();
+
     }
+
   }
+
 });
 
 // GET /api/documents/:id/download — Download a document
-
-// --------------------------------------------------
 
 router.get("/:id/download", async (req, res) => {
 
@@ -1428,7 +1538,7 @@ router.get("/:id/download", async (req, res) => {
 
       documentId,
 
-      "read"
+      "download"
 
     );
 
@@ -1450,7 +1560,7 @@ router.get("/:id/download", async (req, res) => {
 
           reason: access.exists
 
-            ? "Access denied"
+            ? "Download permission denied"
 
             : "Document not found",
 
@@ -1462,7 +1572,7 @@ router.get("/:id/download", async (req, res) => {
 
       return res.status(404).json({
 
-        error: "Document not found.",
+        error: "Document not found or download not permitted.",
 
       });
 
@@ -1476,7 +1586,9 @@ router.get("/:id/download", async (req, res) => {
 
        FROM documents
 
-       WHERE id = $1 AND deleted_at IS NULL`,
+       WHERE id = $1
+
+         AND deleted_at IS NULL`,
 
       [documentId]
 
@@ -1485,26 +1597,6 @@ router.get("/:id/download", async (req, res) => {
 
 
     if (result.rows.length === 0) {
-
-      await writeAuditLog({
-
-        actorUserId: req.user.id,
-
-        action: "DOCUMENT_DOWNLOAD",
-
-        documentId,
-
-        outcome: "denied",
-
-        details: {
-
-          reason: "Document no longer available",
-
-        },
-
-      });
-
-
 
       return res.status(404).json({
 
@@ -1521,8 +1613,6 @@ router.get("/:id/download", async (req, res) => {
     const storageKey = document.storage_key;
 
 
-
-    // Accept only a filename, not a path.
 
     if (
 
@@ -1628,7 +1718,7 @@ router.get("/:id/download", async (req, res) => {
 
                 ? "File transfer failed"
 
-                : "File transfer completed",
+                : "File downloaded",
 
             },
 
@@ -1672,7 +1762,7 @@ router.get("/:id/download", async (req, res) => {
 
   } catch (error) {
 
-    console.error("Document download failed:", error.message);
+    console.error("Document download failed:", error);
 
 
 
@@ -1736,11 +1826,52 @@ router.get("/:id/download", async (req, res) => {
 
 });
 
-// --------------------------------------------------
+
+
+// GET /api/documents/:id/preview — Inline preview for users with read access
+router.get("/:id/preview", async (req, res) => {
+  const documentId = req.params.id;
+  if (!/^[1-9]\d*$/.test(documentId)) {
+    return res.status(400).json({ error: "Invalid document ID." });
+  }
+  try {
+    const access = await checkDocumentAccess(req.user.id, documentId, "read");
+    if (!access.exists || !access.allowed) {
+      await writeAuditLog({ actorUserId: req.user.id, action: "DOCUMENT_PREVIEW", documentId: access.exists ? documentId : null, outcome: "denied", details: { reason: access.exists ? "Read permission denied" : "Document not found" } });
+      return res.status(404).json({ error: "Document not found or preview not permitted." });
+    }
+    const result = await pool.query(
+      `SELECT storage_key, original_filename, mime_type FROM documents WHERE id = $1 AND deleted_at IS NULL`,
+      [documentId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Document not found." });
+    const document = result.rows[0];
+    const storageKey = document.storage_key;
+    if (typeof storageKey !== "string" || !storageKey || path.basename(storageKey) !== storageKey || storageKey === "." || storageKey === "..") {
+      return res.status(500).json({ error: "Could not preview document." });
+    }
+    const filePath = path.resolve(UPLOAD_DIR, storageKey);
+    if (path.dirname(filePath) !== UPLOAD_DIR) return res.status(500).json({ error: "Could not preview document." });
+    await fs.access(filePath);
+    const allowedMime = ["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "text/plain"];
+    const mimeType = allowedMime.includes((document.mime_type || "").toLowerCase()) ? document.mime_type.toLowerCase() : "application/octet-stream";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${String(document.original_filename || "document").replace(/[\r\n"\\]/g, "_")}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.sendFile(filePath, async (error) => {
+      try { await writeAuditLog({ actorUserId: req.user.id, action: "DOCUMENT_PREVIEW", documentId, outcome: error ? "failure" : "success", details: { reason: error ? "Preview transfer failed" : "Document previewed" } }); }
+      catch (auditError) { console.error("Preview audit logging failed:", auditError.message); }
+      if (error && !res.headersSent) res.status(500).json({ error: "Could not preview document." });
+    });
+  } catch (error) {
+    if (error.code === "ENOENT") return res.status(404).json({ error: "Document file not found." });
+    console.error("Document preview failed:", error.message);
+    return res.status(500).json({ error: "Could not preview document." });
+  }
+});
 
 // GET /api/documents/:id — Get document metadata
-
-// --------------------------------------------------
 
 router.get("/:id", async (req, res) => {
 
@@ -1790,7 +1921,7 @@ router.get("/:id", async (req, res) => {
 
           reason: access.exists
 
-            ? "Access denied"
+            ? "Read permission denied"
 
             : "Document not found",
 
@@ -1814,27 +1945,27 @@ router.get("/:id", async (req, res) => {
 
       `SELECT
 
-         d.id,
+        d.id,
 
-         d.owner_id,
+        d.owner_id,
 
-         d.title,
+        d.title,
 
-         d.description,
+        d.description,
 
-         d.category,
+        d.category,
 
-         d.original_filename,
+        d.original_filename,
 
-         d.mime_type,
+        d.mime_type,
 
-         d.size_bytes,
+        d.size_bytes,
 
-         d.sha256,
+        d.sha256,
 
-         d.created_at,
+        d.created_at,
 
-         d.updated_at
+        d.updated_at
 
        FROM documents AS d
 
@@ -1849,26 +1980,6 @@ router.get("/:id", async (req, res) => {
 
 
     if (result.rows.length === 0) {
-
-      await writeAuditLog({
-
-        actorUserId: req.user.id,
-
-        action: "DOCUMENT_READ",
-
-        documentId,
-
-        outcome: "denied",
-
-        details: {
-
-          reason: "Document no longer available",
-
-        },
-
-      });
-
-
 
       return res.status(404).json({
 
@@ -1902,13 +2013,19 @@ router.get("/:id", async (req, res) => {
 
   } catch (error) {
 
-    console.error("Document retrieval failed:", error.message);
+    console.error(
+
+      "Document metadata retrieval failed:",
+
+      error
+
+    );
 
 
 
     return res.status(500).json({
 
-      error: "Could not retrieve document.",
+      error: "Could not retrieve document details.",
 
     });
 
@@ -1917,5 +2034,289 @@ router.get("/:id", async (req, res) => {
 });
 
 
+
+// PATCH /api/documents/:id — Edit document metadata
+
+router.patch("/:id", async (req, res) => {
+
+  const documentId = req.params.id;
+
+  const { title, description, category } = req.body || {};
+
+
+
+  if (!/^[1-9]\d*$/.test(documentId)) {
+
+    return res.status(400).json({
+
+      error: "Invalid document ID.",
+
+    });
+
+  }
+
+
+
+  // Require at least one editable field.
+
+  const suppliedFields = ["title", "description", "category"].filter(
+
+    (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field)
+
+  );
+
+
+
+  if (suppliedFields.length === 0) {
+
+    return res.status(400).json({
+
+      error: "Provide at least one field to update.",
+
+    });
+
+  }
+
+
+
+  if (
+
+    (title !== undefined &&
+
+      (typeof title !== "string" || !title.trim() || title.trim().length > 255)) ||
+
+    (description !== undefined &&
+
+      (typeof description !== "string" || description.length > 2000)) ||
+
+    (category !== undefined &&
+
+      (typeof category !== "string" || category.length > 100))
+
+  ) {
+
+    return res.status(400).json({
+
+      error: "Invalid title, description, or category.",
+
+    });
+
+  }
+
+
+
+  try {
+
+    const access = await checkDocumentAccess(
+
+      req.user.id,
+
+      documentId,
+
+      "edit"
+
+    );
+
+
+
+    if (!access.exists || !access.allowed) {
+
+      await writeAuditLog({
+
+        actorUserId: req.user.id,
+
+        action: "DOCUMENT_EDIT",
+
+        documentId: access.exists ? documentId : null,
+
+        outcome: "denied",
+
+        details: {
+
+          reason: access.exists
+
+            ? "Edit permission denied"
+
+            : "Document not found",
+
+        },
+
+      });
+
+
+
+      return res.status(404).json({
+
+        error: "Document not found or editing not permitted.",
+
+      });
+
+    }
+
+
+
+    const result = await pool.query(
+
+      `UPDATE documents
+
+       SET title = CASE
+
+             WHEN $2::boolean THEN $3
+
+             ELSE title
+
+           END,
+
+           description = CASE
+
+             WHEN $4::boolean THEN $5
+
+             ELSE description
+
+           END,
+
+           category = CASE
+
+             WHEN $6::boolean THEN $7
+
+             ELSE category
+
+           END,
+
+           updated_at = NOW()
+
+       WHERE id = $1
+
+         AND deleted_at IS NULL
+
+       RETURNING
+
+         id,
+
+         owner_id,
+
+         title,
+
+         description,
+
+         category,
+
+         original_filename,
+
+         mime_type,
+
+         size_bytes,
+
+         created_at,
+
+         updated_at`,
+
+      [
+
+        documentId,
+
+        title !== undefined,
+
+        title === undefined ? null : title.trim(),
+
+        description !== undefined,
+
+        description === undefined ? null : description.trim(),
+
+        category !== undefined,
+
+        category === undefined ? null : category.trim(),
+
+      ]
+
+    );
+
+
+
+    if (result.rows.length === 0) {
+
+      return res.status(404).json({
+
+        error: "Document not found.",
+
+      });
+
+    }
+
+
+
+    await writeAuditLog({
+
+      actorUserId: req.user.id,
+
+      action: "DOCUMENT_EDIT",
+
+      documentId,
+
+      outcome: "success",
+
+      details: {
+
+        fieldsUpdated: suppliedFields,
+
+      },
+
+    });
+
+
+
+    return res.status(200).json({
+
+      message: "Document updated successfully.",
+
+      document: result.rows[0],
+
+    });
+
+  } catch (error) {
+
+    console.error("Document update failed:", error);
+
+
+
+    try {
+
+      await writeAuditLog({
+
+        actorUserId: req.user.id,
+
+        action: "DOCUMENT_EDIT",
+
+        documentId,
+
+        outcome: "failure",
+
+        details: {
+
+          reason: "Document update failed",
+
+        },
+
+      });
+
+    } catch (auditError) {
+
+      console.error("Document edit audit logging failed:", auditError.message);
+
+    }
+
+
+
+    return res.status(500).json({
+
+      error: "Could not update document.",
+
+    });
+
+  }
+
+});
+
+// The PATCH route goes above this line.
 
 module.exports = router;

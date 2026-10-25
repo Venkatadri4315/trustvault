@@ -1,0 +1,321 @@
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-forest-50: #edf5ef;
+  --color-forest-100: #dcebe0;
+  --color-forest-200: #bfd9c7;
+  --color-forest-300: #95bea2;
+  --color-forest-400: #679b79;
+  --color-forest-500: #437d5b;
+  --color-forest-600: #326647;
+  --color-forest-700: #28523b;
+  --color-forest-800: #204230;
+  --color-forest-900: #173d32;
+
+  --color-slate-50: #f8faf9;
+  --color-slate-100: #f0f3f1;
+  --color-slate-200: #e1e7e3;
+  --color-slate-300: #cbd5ce;
+  --color-slate-400: #95a39a;
+  --color-slate-500: #718077;
+  --color-slate-600: #53645a;
+  --color-slate-700: #3c4b42;
+  --color-slate-800: #28372e;
+  --color-slate-900: #182522;
+
+  --color-success: #287747;
+  --color-warning: #98620d;
+  --color-danger: #b42318;
+  --color-info: #245d9c;
+}
+
+:root {
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  color: #182522;
+  background: #f7f9f8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+
+  --app-background: #f7f9f8;
+  --surface: #ffffff;
+  --text-primary: #182522;
+  --text-muted: #718077;
+  --border-default: #e1e7e3;
+  --focus-ring: #679b79;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: #cce9dc;
+  color: #174b39;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =========================================
+   TrustVault — Forgot & Reset Password
+   ========================================= */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(ellipse at top left, #edf5ef 0%, transparent 48%),
+    linear-gradient(145deg, #f7f9f8, #edf5ef);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.auth-page h1 {
+  margin: 0 0 12px;
+  font-family: var(--font-heading);
+  font-size: clamp(1.8rem, 4vw, 2.35rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+  text-align: center;
+  color: var(--color-forest-900);
+}
+
+.auth-page > p {
+  max-width: 420px;
+  margin: 0 0 24px;
+  color: var(--text-muted);
+  font-size: 0.96rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.auth-page form {
+  width: 100%;
+  max-width: 430px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  box-shadow:
+    0 4px 12px rgb(24 37 34 / 3%),
+    0 20px 55px rgb(24 37 34 / 7%);
+}
+
+.auth-page form label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-slate-700);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.auth-page form input {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.auth-page form input::placeholder {
+  color: var(--color-slate-400);
+}
+
+.auth-page form input:focus {
+  border-color: var(--color-forest-500);
+  box-shadow: 0 0 0 4px rgb(67 125 91 / 13%);
+}
+
+.auth-page form button {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 18px;
+  border: 1px solid var(--color-forest-600);
+  border-radius: 10px;
+  background: var(--color-forest-600);
+  color: #fff;
+  font-weight: 700;
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.auth-page form button:hover:not(:disabled) {
+  background: var(--color-forest-700);
+  transform: translateY(-1px);
+}
+
+.auth-page form button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.auth-page a {
+  color: var(--color-forest-700);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-page a:hover {
+  color: var(--color-forest-900);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-page [role="status"],
+.auth-page [role="alert"] {
+  width: 100%;
+  max-width: 430px;
+  margin: 18px 0 0;
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.auth-page [role="status"] {
+  border: 1px solid #bfd9c7;
+  background: #edf5ef;
+  color: #204230;
+}
+
+.auth-page [role="alert"] {
+  border: 1px solid #f2c6c2;
+  background: #fff3f2;
+  color: #b42318;
+}
+
+@media (max-width: 480px) {
+  .auth-page {
+    padding: 24px 16px;
+  }
+
+  .auth-page form {
+    padding: 24px 20px;
+    border-radius: 14px;
+  }
+
+  .auth-page h1 {
+    font-size: 1.8rem;
+  }
+}
+
+/* TrustVault mobile responsiveness */
+@media (max-width: 600px) {
+  .auth-page {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 24px 16px;
+    justify-content: center;
+    overflow-wrap: anywhere;
+  }
+
+  .auth-page h1 {
+    width: 100%;
+    font-size: clamp(1.65rem, 7vw, 2rem);
+    line-height: 1.25;
+    letter-spacing: -0.03em;
+  }
+
+  .auth-page > p {
+    width: 100%;
+    max-width: 360px;
+    font-size: 0.92rem;
+  }
+
+  .auth-page form {
+    width: 100%;
+    max-width: 430px;
+    padding: 24px 18px;
+    border-radius: 14px;
+  }
+
+  .auth-page form input {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .auth-page form button {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .auth-page [role="status"],
+  .auth-page [role="alert"] {
+    width: 100%;
+    max-width: 430px;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 360px) {
+  .auth-page {
+    padding: 20px 12px;
+  }
+
+  .auth-page form {
+    padding: 20px 14px;
+  }
+}

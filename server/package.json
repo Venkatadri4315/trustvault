@@ -21,7 +21,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.4.0",
     "nodemailer": "^10.2.1",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "resend": "^6.34.1"
   },
   "devDependencies": {
     "supertest": "^7.3.1",

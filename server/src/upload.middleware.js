@@ -2,8 +2,12 @@
 const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
+const fs = require("fs");
 
-const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
+const UPLOAD_DIR = path.resolve(
+  process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads")
+);
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const ALLOWED_TYPES = new Map([
@@ -13,13 +17,16 @@ const ALLOWED_TYPES = new Map([
   ["image/png", ".png"],
 ]);
 
+// Create the upload directory if it does not exist.
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => {
     callback(null, UPLOAD_DIR);
   },
 
   filename: (_req, _file, callback) => {
-    // Use a random server-generated name, not the original filename.
+    // Generate a unique server-side filename.
     callback(null, crypto.randomUUID());
   },
 });
